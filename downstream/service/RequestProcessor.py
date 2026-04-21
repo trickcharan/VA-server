@@ -74,6 +74,7 @@ class RequestProcessor:
 
         elif event_input.event_type == EventInput.EventType.SESSION_END:
             logger.info("[%s] Received SESSION_END", self.conversation_id)
+            self.can_be_deleted = True
             if self.adapter:
                 yield from self.adapter.on_session_end()
                 self.adapter = None

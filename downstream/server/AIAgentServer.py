@@ -55,15 +55,19 @@ class AIAgent(voicevirtualagent_pb2_grpc.VoiceVirtualAgentServicer):
                     )
                 yield from self.state[request.conversation_id].process_request(request)
         except grpc.RpcError as e:
-            print(e.details())
+            print(f"[{conversation_id}] gRPC error: {e}")
         except Exception as ex:
-            print(ex)
+            print(f"[{conversation_id}] Error: {ex}")
         finally:
-            # gRPC stream ended — clean up resources regardless of how we got here
-            if conversation_id and conversation_id in self.state:
-                self.state[conversation_id].cleanup()
-                del self.state[conversation_id]
-                print(f"[{conversation_id}] Stream ended — resources cleaned up")
+            # gRPC stream ended — Webex CC may open multiple streams for the
+            # same conversation_id, so do NOT cleanup the adapter here.
+            # Cleanup happens when SESSION_END event is received by RequestProcessor.
+            if conversation_id:
+                processor = self.state.get(conversation_id)
+                can_delete = processor and processor.can_be_deleted
+                if can_delete:
+                    del self.state[conversation_id]
+                print(f"[{conversation_id}] Stream ended (deleted={can_delete})")
 
 
 def serve():
