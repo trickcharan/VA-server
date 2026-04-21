@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 
 from downstream.proto.voicevirtualagent_pb2 import VoiceVAResponse
@@ -66,7 +67,7 @@ class RequestProcessor:
                     conversation_id=self.conversation_id,
                     barge_in_enabled=self.is_barge_in_enabled,
                 )
-                yield from self.adapter.on_session_start()
+                yield from self.adapter.on_session_start(welcome_audio=self._get_welcome_audio())
                 logger.info("[%s] Adapter ready", self.conversation_id)
             except Exception as e:
                 logger.error("[%s] Failed to start adapter: %s", self.conversation_id, e, exc_info=True)
@@ -82,11 +83,24 @@ class RequestProcessor:
                 yield VoiceVAResponse()
 
     def _process_audio_event(self, audio_byte):
-        print(f"Received audio chunk of size {len(audio_byte)}")
         if self.adapter:
-            yield from self.adapter.on_audio(audio_byte)
+            self.adapter.on_audio(audio_byte)
+            # Drain any responses Google has queued (SOI, CHUNKs, EOI, FINAL)
+            yield from self.adapter.drain_responses()
         else:
             print(f"[{self.conversation_id}] No adapter — ignoring audio")
+
+    def _get_welcome_audio(self) -> bytes | None:
+        """Load welcome prompt audio from downstream/config/audio/welcome_audio.wav."""
+        audio_path = os.path.join(
+            os.path.dirname(__file__), "..", "config", "audio", "welcome_audio.wav"
+        )
+        try:
+            with open(audio_path, "rb") as f:
+                return f.read()
+        except FileNotFoundError:
+            logger.warning("Welcome audio not found at %s", audio_path)
+            return None
 
     def cleanup(self):
         """Release resources when the gRPC stream ends. Idempotent."""

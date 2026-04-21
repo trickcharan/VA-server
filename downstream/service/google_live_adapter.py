@@ -15,7 +15,9 @@ Hybrid SOI/EOI strategy (Google auto-VAD stays enabled):
 """
 
 import asyncio
+import audioop
 import logging
+import os
 import queue
 import threading
 
@@ -26,12 +28,28 @@ from downstream.google_live.session import GoogleLiveSession
 
 logger = logging.getLogger("adapter")
 
-# Sentinel to signal end of response turn
-_TURN_COMPLETE = object()
-
 # Audio chunk size for streaming back to gRPC
-# 640 bytes = 80ms at 8kHz mu-law (1 byte/sample)
-GRPC_AUDIO_CHUNK_SIZE = 640
+# 44100 Hz * 2 channels * 2 bytes/sample * 0.02s (20ms) = 3528 bytes/frame
+# Use ~20ms chunks for smooth playback
+GRPC_AUDIO_CHUNK_SIZE = 3528
+
+
+def transcode_to_google(pcm16_stereo_44k: bytes) -> bytes:
+    """Convert 44.1kHz stereo PCM16 → 16kHz mono PCM16 for Google Live API."""
+    # Stereo → mono (average both channels)
+    mono = audioop.tomono(pcm16_stereo_44k, 2, 0.5, 0.5)
+    # 44100 Hz → 16000 Hz
+    resampled, _ = audioop.ratecv(mono, 2, 1, 44100, 16000, None)
+    return resampled
+
+
+def transcode_from_google(pcm16_24k: bytes) -> bytes:
+    """Convert 24kHz mono PCM16 from Google → 44.1kHz stereo PCM16 for gRPC/Webex."""
+    # 24000 Hz → 44100 Hz
+    resampled, _ = audioop.ratecv(pcm16_24k, 2, 1, 24000, 44100, None)
+    # Mono → stereo (duplicate channel)
+    stereo = audioop.tostereo(resampled, 2, 1, 1)
+    return stereo
 
 
 class GoogleLiveAdapter:
@@ -56,30 +74,40 @@ class GoogleLiveAdapter:
         self._session: GoogleLiveSession | None = None
         self._receiver_task: asyncio.Task | None = None
 
-        # Threading events — Google async callbacks signal, gRPC thread checks
-        self._soi_event = threading.Event()           # First inputTranscription arrived
-        self._turn_complete_event = threading.Event()  # Model finished responding
-
-        # Audio response queue — Google pushes audio, gRPC drains after turn_complete
-        self._audio_queue: queue.Queue = queue.Queue()
+        # Thread-safe response queue — Google callbacks push VoiceVAResponse
+        # objects here; gRPC thread drains them via drain_responses().
+        self._response_queue: queue.Queue = queue.Queue()
 
         # State tracking
         self._start_of_input_sent = False
+        self._end_of_input_sent = False
         self._cleaned_up = False
 
         # Transcript accumulation
         self._input_transcript_parts: list[str] = []
         self._output_transcript_parts: list[str] = []
 
+        # WAV header tracking — Webex sends audio as a WAV stream;
+        # the first chunk(s) contain the RIFF/WAV header that must be stripped.
+        self._wav_header_stripped = False
+
+        # Debug: save audio to files for analysis
+        _debug_dir = os.path.join(os.path.dirname(__file__), "..", "config", "audio", "debug")
+        os.makedirs(_debug_dir, exist_ok=True)
+        self._debug_raw_audio_file = open(os.path.join(_debug_dir, f"raw_webex_{conversation_id}.raw"), "wb")
+        self._debug_caller_audio_file = open(os.path.join(_debug_dir, f"caller_audio_{conversation_id}.raw"), "wb")
+        self._debug_google_audio_file = open(os.path.join(_debug_dir, f"google_audio_{conversation_id}.raw"), "wb")
+        logger.info("[%s] Debug audio files in %s", conversation_id, _debug_dir)
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def on_session_start(self):
+    def on_session_start(self, welcome_audio: bytes | None = None):
         """
         Called on SESSION_START event.
         Spins up the async loop, connects to Google, starts the receiver.
-        Waits for Google's initial greeting, then yields it as the welcome prompt.
+        Yields a hardcoded welcome audio prompt to the caller.
         """
         logger.info("[%s] Session starting — connecting to Google Live", self.conversation_id)
 
@@ -96,24 +124,14 @@ class GoogleLiveAdapter:
 
         logger.info("[%s] Google Live session connected, receiver started", self.conversation_id)
 
-        # Wait for Google's initial greeting (turn_complete signals it's done)
-        logger.info("[%s] Waiting for welcome prompt from Google...", self.conversation_id)
-        if self._turn_complete_event.wait(timeout=30):
-            logger.info("[%s] Welcome prompt received, streaming to caller", self.conversation_id)
-            # Drain greeting audio and yield as welcome prompt
-            welcome_audio = self._collect_audio_from_queue()
-            transcript = " ".join(self._output_transcript_parts) or "Welcome"
-            if welcome_audio:
-                yield EventUtils.get_audio_output_events_bytes(
-                    welcome_audio, transcript,
-                    self.barge_in_enabled,
-                    VoiceVAResponse.ResponseType.FINAL,
-                )
-            else:
-                logger.warning("[%s] No greeting audio received", self.conversation_id)
-            self._reset_turn_state()
-        else:
-            logger.warning("[%s] Timed out waiting for welcome prompt", self.conversation_id)
+        # Send hardcoded welcome prompt to caller
+        if welcome_audio:
+            logger.info("[%s] Sending welcome prompt (%d bytes)", self.conversation_id, len(welcome_audio))
+            yield EventUtils.get_audio_output_events_bytes(
+                welcome_audio, "Welcome",
+                self.barge_in_enabled,
+                VoiceVAResponse.ResponseType.FINAL,
+            )
 
     def on_session_end(self):
         """
@@ -137,10 +155,6 @@ class GoogleLiveAdapter:
 
         logger.info("[%s] Cleaning up Google Live session", self.conversation_id)
 
-        # Unblock any waiting gRPC thread
-        self._soi_event.set()
-        self._turn_complete_event.set()
-
         if self._loop and self._loop.is_running():
             future = asyncio.run_coroutine_threadsafe(self._async_stop(), self._loop)
             try:
@@ -157,92 +171,100 @@ class GoogleLiveAdapter:
         self._loop = None
         self._loop_thread = None
 
+        # Close debug audio files
+        if self._debug_raw_audio_file:
+            self._debug_raw_audio_file.close()
+            self._debug_raw_audio_file = None
+        if self._debug_caller_audio_file:
+            self._debug_caller_audio_file.close()
+            self._debug_caller_audio_file = None
+        if self._debug_google_audio_file:
+            self._debug_google_audio_file.close()
+            self._debug_google_audio_file = None
+
         logger.info("[%s] Google Live session cleaned up", self.conversation_id)
 
     def on_audio(self, audio_bytes: bytes):
         """
         Called when audio_input arrives from the gRPC stream.
-        Hybrid SOI/EOI pattern:
-          1. Forward audio to Google
-          2. First inputTranscription → yield START_OF_INPUT (SOI)
-          3. turnComplete → yield END_OF_INPUT (EOI) + drain audio CHUNKs + FINAL
+        Forwards audio to Google (fire-and-forget, no yields).
+        Responses come back via drain_responses() on subsequent streams.
         """
         if not self._loop or not self._session or self._cleaned_up:
             return
 
-        # Forward caller audio to Google
+        # Only forward meaningful audio (skip near-empty frames)
+        if len(audio_bytes) <= 15:
+            return
+
+        # Debug: save raw Webex audio BEFORE transcoding
+        if self._debug_raw_audio_file:
+            self._debug_raw_audio_file.write(audio_bytes)
+
+        # Strip WAV header from first chunk — Webex sends audio as a WAV stream.
+        if not self._wav_header_stripped:
+            self._wav_header_stripped = True
+            if audio_bytes[:4] == b'RIFF':
+                data_marker = audio_bytes.find(b'data')
+                if data_marker >= 0:
+                    audio_start = data_marker + 8
+                    logger.info("[%s] WAV header detected, stripping %d bytes",
+                                self.conversation_id, audio_start)
+                    audio_bytes = audio_bytes[audio_start:]
+                    if len(audio_bytes) == 0:
+                        return
+                else:
+                    logger.warning("[%s] RIFF header but no 'data' chunk — skipping first chunk",
+                                   self.conversation_id)
+                    return
+            else:
+                logger.info("[%s] No WAV header detected, treating as raw PCM", self.conversation_id)
+
+        # Ensure chunk is aligned to 4 bytes (stereo PCM16 = 4 bytes/frame)
+        remainder = len(audio_bytes) % 4
+        if remainder:
+            audio_bytes = audio_bytes[:len(audio_bytes) - remainder]
+            if len(audio_bytes) == 0:
+                return
+
+        # Transcode 44.1kHz stereo PCM16 → 16kHz mono PCM16 for Google
+        pcm16_audio = transcode_to_google(audio_bytes)
+
+        # Debug: save caller audio (transcoded)
+        if self._debug_caller_audio_file:
+            self._debug_caller_audio_file.write(pcm16_audio)
+
+        # Forward caller audio to Google (fire-and-forget)
         asyncio.run_coroutine_threadsafe(
-            self._session.send_audio(audio_bytes), self._loop
+            self._session.send_audio(pcm16_audio), self._loop
         )
 
-        # SOI: first inputTranscription means user started speaking (non-blocking check)
-        if not self._start_of_input_sent and self._soi_event.is_set():
-            self._start_of_input_sent = True
-            logger.info("[%s] Sending START_OF_INPUT (from inputTranscription)", self.conversation_id)
-            yield EventUtils.get_va_response_for_output_event(
-                EventUtils.get_output_event(OutputEvent.EventType.START_OF_INPUT)
-            )
-
-        # EOI: turnComplete means Google's VAD detected silence, model responded,
-        # and the turn is done (non-blocking check)
-        if self._start_of_input_sent and self._turn_complete_event.is_set():
-            logger.info("[%s] Sending END_OF_INPUT (from turnComplete)", self.conversation_id)
-            yield EventUtils.get_va_response_for_output_event(
-                EventUtils.get_output_event(OutputEvent.EventType.END_OF_INPUT)
-            )
-
-            # Drain all buffered AI audio as CHUNK responses, then FINAL
-            yield from self._stream_response_chunks()
-
-            # Reset state for next conversation turn
-            self._reset_turn_state()
-
-    # ------------------------------------------------------------------
-    # Response streaming — called from gRPC thread after turn complete
-    # ------------------------------------------------------------------
-
-    def _collect_audio_from_queue(self) -> bytes:
-        """Drain audio queue into a single bytes buffer (up to _TURN_COMPLETE sentinel)."""
-        audio_parts = []
-        while True:
+    def drain_responses(self):
+        """
+        Yield any VoiceVAResponse objects that Google callbacks have queued.
+        Called from the gRPC thread on every process_request() invocation.
+        This is how responses reach Webex — they get yielded on whatever
+        gRPC stream happens to be active at the time.
+        """
+        while not self._response_queue.empty():
             try:
-                item = self._audio_queue.get_nowait()
-                if item is _TURN_COMPLETE:
-                    break
-                audio_parts.append(item)
-            except queue.Empty:
-                break
-        return b"".join(audio_parts)
-
-    def _stream_response_chunks(self):
-        """Drain audio queue and yield CHUNKs, then yield FINAL."""
-        while True:
-            try:
-                item = self._audio_queue.get_nowait()
-                if item is _TURN_COMPLETE:
-                    break
-                # item is raw audio bytes from Google
-                for i in range(0, len(item), GRPC_AUDIO_CHUNK_SIZE):
-                    chunk = item[i:i + GRPC_AUDIO_CHUNK_SIZE]
-                    yield EventUtils.get_audio_output_events_bytes(
-                        chunk,
-                        None,
-                        self.barge_in_enabled,
-                        VoiceVAResponse.ResponseType.CHUNK,
-                    )
+                resp = self._response_queue.get_nowait()
+                yield resp
             except queue.Empty:
                 break
 
-        # Send FINAL to signal end of this response turn
-        yield EventUtils.get_audio_output_events_bytes(
-            None, None, self.barge_in_enabled, VoiceVAResponse.ResponseType.FINAL
-        )
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _enqueue_response(self, resp: VoiceVAResponse):
+        """Thread-safe: push a response into the queue for gRPC to drain."""
+        self._response_queue.put(resp)
 
     def _reset_turn_state(self):
         """Reset state for the next conversation turn."""
         self._start_of_input_sent = False
-        self._soi_event.clear()
-        self._turn_complete_event.clear()
+        self._end_of_input_sent = False
 
     # ------------------------------------------------------------------
     # Async internals — run in background event loop
@@ -259,8 +281,13 @@ class GoogleLiveAdapter:
         await self._session.connect()
 
         # Start listening for responses in background
-        self._receiver_task = asyncio.ensure_future(
-            self._session.receive_responses(
+        self._receiver_task = asyncio.ensure_future(self._receive_wrapper())
+
+    async def _receive_wrapper(self):
+        """Wrap receiver to catch and log any errors."""
+        try:
+            logger.info("[%s] Receiver task started", self.conversation_id)
+            await self._session.receive_responses(
                 on_audio=self._on_google_audio,
                 on_text=self._on_google_text,
                 on_input_transcription=self._on_google_input_transcription,
@@ -268,7 +295,11 @@ class GoogleLiveAdapter:
                 on_turn_complete=self._on_google_turn_complete,
                 on_interrupted=self._on_google_interrupted,
             )
-        )
+            logger.info("[%s] Receiver task finished normally", self.conversation_id)
+        except asyncio.CancelledError:
+            logger.info("[%s] Receiver task cancelled", self.conversation_id)
+        except Exception as e:
+            logger.error("[%s] Receiver task crashed: %s", self.conversation_id, e, exc_info=True)
 
     async def _async_stop(self):
         """Close session and cancel receiver."""
@@ -286,8 +317,31 @@ class GoogleLiveAdapter:
     # ------------------------------------------------------------------
 
     async def _on_google_audio(self, audio_bytes: bytes):
-        """Google sent model audio — enqueue for gRPC thread to drain after turn complete."""
-        self._audio_queue.put(audio_bytes)
+        """Google sent model audio — transcode and enqueue as CHUNK for gRPC."""
+        logger.info("[%s] Received %d bytes audio from Google", self.conversation_id, len(audio_bytes))
+
+        # First audio from Google = model started responding = user finished speaking → EOI
+        if not self._end_of_input_sent:
+            self._end_of_input_sent = True
+            logger.info("[%s] Sending END_OF_INPUT (Google started responding)", self.conversation_id)
+            self._enqueue_response(
+                EventUtils.get_va_response_for_output_event(
+                    EventUtils.get_output_event(OutputEvent.EventType.END_OF_INPUT)
+                )
+            )
+
+        webex_audio = transcode_from_google(audio_bytes)
+        if self._debug_google_audio_file:
+            self._debug_google_audio_file.write(webex_audio)
+        # Split into chunks and enqueue each
+        for i in range(0, len(webex_audio), GRPC_AUDIO_CHUNK_SIZE):
+            chunk = webex_audio[i:i + GRPC_AUDIO_CHUNK_SIZE]
+            self._enqueue_response(
+                EventUtils.get_audio_output_events_bytes(
+                    chunk, None, self.barge_in_enabled,
+                    VoiceVAResponse.ResponseType.CHUNK,
+                )
+            )
 
     async def _on_google_text(self, text: str):
         """Google sent text response — log it (audio is primary)."""
@@ -296,12 +350,17 @@ class GoogleLiveAdapter:
     async def _on_google_input_transcription(self, text: str):
         """
         Google transcribed user speech — this is our SOI proxy.
-        First transcription in a turn = user started speaking.
+        First transcription in a turn = user started speaking → enqueue SOI.
         """
         self._input_transcript_parts.append(text)
-        if not self._soi_event.is_set():
-            logger.info("[%s] Input transcription (SOI proxy): %s", self.conversation_id, text)
-            self._soi_event.set()
+        if not self._start_of_input_sent:
+            self._start_of_input_sent = True
+            logger.info("[%s] SOI (input transcription): %s", self.conversation_id, text)
+            self._enqueue_response(
+                EventUtils.get_va_response_for_output_event(
+                    EventUtils.get_output_event(OutputEvent.EventType.START_OF_INPUT)
+                )
+            )
 
     async def _on_google_output_transcription(self, text: str):
         """Google transcribed model speech — accumulate for session summary."""
@@ -310,18 +369,28 @@ class GoogleLiveAdapter:
     async def _on_google_turn_complete(self):
         """
         Google model finished its response turn.
-        This implies: user spoke → Google VAD detected silence → model responded → done.
-        Signal the gRPC thread to send EOI + drain audio.
+        Enqueue FINAL and reset for next turn.
+        (EOI was already sent when first audio arrived.)
         """
         logger.info("[%s] Google: Turn complete", self.conversation_id)
-        self._audio_queue.put(_TURN_COMPLETE)
-        self._turn_complete_event.set()
+        self._enqueue_response(
+            EventUtils.get_audio_output_events_bytes(
+                None, None, self.barge_in_enabled,
+                VoiceVAResponse.ResponseType.FINAL,
+            )
+        )
+        self._reset_turn_state()
 
     async def _on_google_interrupted(self):
         """
         User barged in — model was interrupted mid-response.
-        Signal turn complete so gRPC thread can flush partial audio and reset.
+        Enqueue FINAL and reset for next turn.
         """
         logger.info("[%s] Google: Barge-in interrupted", self.conversation_id)
-        self._audio_queue.put(_TURN_COMPLETE)
-        self._turn_complete_event.set()
+        self._enqueue_response(
+            EventUtils.get_audio_output_events_bytes(
+                None, None, self.barge_in_enabled,
+                VoiceVAResponse.ResponseType.FINAL,
+            )
+        )
+        self._reset_turn_state()

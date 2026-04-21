@@ -47,6 +47,8 @@ class AIAgent(voicevirtualagent_pb2_grpc.VoiceVirtualAgentServicer):
         try:
             for request in request_iterator:
                 conversation_id = request.conversation_id
+                event_type = request.WhichOneof("voice_va_input_type")
+                #print(f"[{conversation_id}] Received request: {event_type}")
                 if request.conversation_id not in self.state:
                     self.state[request.conversation_id] = RequestProcessor(
                         request.conversation_id,

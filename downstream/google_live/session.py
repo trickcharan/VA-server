@@ -39,6 +39,11 @@ class GoogleLiveSession:
         config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             system_instruction=self._system_instruction,
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Aoede")
+                ),
+            ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
         )
@@ -111,7 +116,9 @@ class GoogleLiveSession:
         logger.info("Listening for responses from Google Live API...")
         try:
             async for message in self._session.receive():
+                logger.info("RAW message received from Google: %s", type(message).__name__)
                 if not self._running:
+                    logger.info("Receiver stopped (running=False)")
                     break
 
                 # Setup complete acknowledgement
@@ -163,6 +170,10 @@ class GoogleLiveSession:
                 if message.usage_metadata:
                     logger.debug("Usage: %s", message.usage_metadata)
 
+            logger.info("Receiver loop ended normally")
+        except asyncio.CancelledError:
+            logger.info("Receiver cancelled")
+            raise
         except Exception as e:
             if self._running:
                 logger.error("Error receiving responses: %s", e, exc_info=True)
