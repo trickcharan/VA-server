@@ -70,7 +70,7 @@ def serve():
     thread_count = int(os.environ.get('worker_thread', 10))
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=thread_count),
-        interceptors=[AuthInterceptor()],
+        #interceptors=[AuthInterceptor()],
     )
     voicevirtualagent_pb2_grpc.add_VoiceVirtualAgentServicer_to_server(AIAgent(), server)
     server.add_insecure_port(f'[::]:{PORT}')
