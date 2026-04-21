@@ -1,9 +1,12 @@
+import logging
 import time
 
 from downstream.proto.voicevirtualagent_pb2 import VoiceVAResponse
 from downstream.proto.byova_common_pb2 import OutputEvent, EventInput
 from downstream.utils.EventUtils import EventUtils
 from downstream.service.google_live_adapter import GoogleLiveAdapter
+
+logger = logging.getLogger("request-processor")
 
 
 class RequestProcessor:
@@ -56,16 +59,21 @@ class RequestProcessor:
 
     def _process_event_input(self, event_input):
         if event_input.event_type == EventInput.EventType.SESSION_START:
-            print("Received Session start input")
+            logger.info("[%s] Received SESSION_START", self.conversation_id)
             # Create adapter and connect to Google Live API
-            self.adapter = GoogleLiveAdapter(
-                conversation_id=self.conversation_id,
-                barge_in_enabled=self.is_barge_in_enabled,
-            )
-            yield from self.adapter.on_session_start()
+            try:
+                self.adapter = GoogleLiveAdapter(
+                    conversation_id=self.conversation_id,
+                    barge_in_enabled=self.is_barge_in_enabled,
+                )
+                yield from self.adapter.on_session_start()
+                logger.info("[%s] Adapter ready", self.conversation_id)
+            except Exception as e:
+                logger.error("[%s] Failed to start adapter: %s", self.conversation_id, e, exc_info=True)
+                self.adapter = None
 
         elif event_input.event_type == EventInput.EventType.SESSION_END:
-            print("Received Session end input")
+            logger.info("[%s] Received SESSION_END", self.conversation_id)
             if self.adapter:
                 yield from self.adapter.on_session_end()
                 self.adapter = None
