@@ -79,6 +79,7 @@ class GoogleLiveAdapter:
         """
         Called on SESSION_START event.
         Spins up the async loop, connects to Google, starts the receiver.
+        Waits for Google's initial greeting, then yields it as the welcome prompt.
         """
         logger.info("[%s] Session starting — connecting to Google Live", self.conversation_id)
 
@@ -94,8 +95,25 @@ class GoogleLiveAdapter:
         future.result(timeout=30)
 
         logger.info("[%s] Google Live session connected, receiver started", self.conversation_id)
-        return
-        yield  # Make this a generator
+
+        # Wait for Google's initial greeting (turn_complete signals it's done)
+        logger.info("[%s] Waiting for welcome prompt from Google...", self.conversation_id)
+        if self._turn_complete_event.wait(timeout=30):
+            logger.info("[%s] Welcome prompt received, streaming to caller", self.conversation_id)
+            # Drain greeting audio and yield as welcome prompt
+            welcome_audio = self._collect_audio_from_queue()
+            transcript = " ".join(self._output_transcript_parts) or "Welcome"
+            if welcome_audio:
+                yield EventUtils.get_audio_output_events_bytes(
+                    welcome_audio, transcript,
+                    self.barge_in_enabled,
+                    VoiceVAResponse.ResponseType.FINAL,
+                )
+            else:
+                logger.warning("[%s] No greeting audio received", self.conversation_id)
+            self._reset_turn_state()
+        else:
+            logger.warning("[%s] Timed out waiting for welcome prompt", self.conversation_id)
 
     def on_session_end(self):
         """
@@ -182,6 +200,19 @@ class GoogleLiveAdapter:
     # ------------------------------------------------------------------
     # Response streaming — called from gRPC thread after turn complete
     # ------------------------------------------------------------------
+
+    def _collect_audio_from_queue(self) -> bytes:
+        """Drain audio queue into a single bytes buffer (up to _TURN_COMPLETE sentinel)."""
+        audio_parts = []
+        while True:
+            try:
+                item = self._audio_queue.get_nowait()
+                if item is _TURN_COMPLETE:
+                    break
+                audio_parts.append(item)
+            except queue.Empty:
+                break
+        return b"".join(audio_parts)
 
     def _stream_response_chunks(self):
         """Drain audio queue and yield CHUNKs, then yield FINAL."""

@@ -82,6 +82,7 @@ class RequestProcessor:
                 yield VoiceVAResponse()
 
     def _process_audio_event(self, audio_byte):
+        print(f"Received audio chunk of size {len(audio_byte)}")
         if self.adapter:
             yield from self.adapter.on_audio(audio_byte)
         else:
