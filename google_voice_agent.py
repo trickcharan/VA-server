@@ -11,7 +11,7 @@ import logging
 from dotenv import load_dotenv
 load_dotenv()
 
-from downstream.server.AIAgentServer import serve
+from app.server.AIAgentServer import serve
 
 logging.basicConfig(
     level=logging.INFO,

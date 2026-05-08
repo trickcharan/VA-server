@@ -3,8 +3,8 @@
 import grpc
 import warnings
 
-from downstream.proto import byova_common_pb2 as byova__common__pb2
-from downstream.proto import voicevirtualagent_pb2 as voicevirtualagent__pb2
+from app.proto import byova_common_pb2 as byova__common__pb2
+from app.proto import voicevirtualagent_pb2 as voicevirtualagent__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__

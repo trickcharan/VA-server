@@ -3,11 +3,11 @@ import logging
 import os
 from concurrent import futures
 
-from downstream.proto import byova_common_pb2
-from downstream.proto import voicevirtualagent_pb2_grpc
-from downstream.service.VirtualAgents import VirtualAgents
-from downstream.interceptor.AuthInterceptor import AuthInterceptor
-from downstream.service.RequestProcessor import RequestProcessor
+from app.proto import byova_common_pb2
+from app.proto import voicevirtualagent_pb2_grpc
+from app.service.VirtualAgents import VirtualAgents
+from app.interceptor.AuthInterceptor import AuthInterceptor
+from app.service.RequestProcessor import RequestProcessor
 
 PORT = 8086
 

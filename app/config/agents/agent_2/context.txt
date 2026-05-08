@@ -1,0 +1,22 @@
+Rameswaram cafe — Customer Knowledge Base
+
+Popular destinations: Bangalore, Madurai, Chennai, Delhi mumbai
+Booking hours: phone support 7 AM – 10 PM IST.
+Cancellation policy: No cancellation
+
+Available food items:
+Breakfast: 7Am to 12Pm
+    Idli, Dosa, Vada, Upma, Pongal, Sambar, Chutney
+Lunch: 12:00Pm to 4 Pm
+    Lemon rice, Tomato rice, Curd rice, mini meal
+Evening: 4 Pm to 6 Pm
+    Vada, baji, Tea, coffee, Gobi 65.
+Dinner: 6 Pm to 9 Pm
+    Idli, Dosa, Chappathi, Parotta, Fried rice
+
+Idli per piece prices: 20rs
+Dosa per piece prices: 45rs
+Chappathi per piece prices: 25rs
+Parotta per piece prices: 25rs
+Fried rice per piece prices: 125rs
+

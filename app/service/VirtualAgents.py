@@ -1,7 +1,7 @@
 import os
 import json
 
-from downstream.model.VirtualAgentInfo import VirtualAgentInfo
+from app.model.VirtualAgentInfo import VirtualAgentInfo
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config')
 

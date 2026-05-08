@@ -4,3 +4,5 @@ __pycache__/
 .env
 .env.example
 downstream/config/audio/debug/
+app/config/audio/debug/
+rms_simulator/

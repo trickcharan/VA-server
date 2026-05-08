@@ -2,10 +2,12 @@ import logging
 import os
 import time
 
-from downstream.proto.voicevirtualagent_pb2 import VoiceVAResponse
-from downstream.proto.byova_common_pb2 import OutputEvent, EventInput
-from downstream.utils.EventUtils import EventUtils
-from downstream.service.google_live_adapter import GoogleLiveAdapter
+from app.adapters import create_adapter
+from app.audio.transcoder import strip_wav_header
+from app.config.agent_config import AgentConfig
+from app.proto.voicevirtualagent_pb2 import VoiceVAResponse
+from app.proto.byova_common_pb2 import OutputEvent, EventInput
+from app.utils.EventUtils import EventUtils
 
 logger = logging.getLogger("request-processor")
 
@@ -61,14 +63,19 @@ class RequestProcessor:
     def _process_event_input(self, event_input):
         if event_input.event_type == EventInput.EventType.SESSION_START:
             logger.info("[%s] Received SESSION_START", self.conversation_id)
-            # Create adapter and connect to Google Live API
+            # Load per-agent config and create the right STS adapter
             try:
-                self.adapter = GoogleLiveAdapter(
+                config = AgentConfig.load(self.virtual_agent_id)
+                self.adapter = create_adapter(
+                    provider=config.provider,
                     conversation_id=self.conversation_id,
                     barge_in_enabled=self.is_barge_in_enabled,
+                    system_instruction=config.system_instruction,
+                    customer_tools=config.tools,
                 )
-                yield from self.adapter.on_session_start(welcome_audio=self._get_welcome_audio())
-                logger.info("[%s] Adapter ready", self.conversation_id)
+                welcome_audio = self._load_welcome_audio(config.welcome_audio_path)
+                yield from self.adapter.on_session_start(welcome_audio=welcome_audio)
+                logger.info("[%s] Adapter ready (provider=%s)", self.conversation_id, config.provider)
             except Exception as e:
                 logger.error("[%s] Failed to start adapter: %s", self.conversation_id, e, exc_info=True)
                 self.adapter = None
@@ -90,17 +97,23 @@ class RequestProcessor:
         else:
             print(f"[{self.conversation_id}] No adapter — ignoring audio")
 
-    def _get_welcome_audio(self) -> bytes | None:
-        """Load welcome prompt audio from downstream/config/audio/welcome_audio.wav."""
-        audio_path = os.path.join(
-            os.path.dirname(__file__), "..", "config", "audio", "welcome_audio.wav"
-        )
+    def _load_welcome_audio(self, audio_path: str | None) -> bytes | None:
+        """Load welcome prompt audio as raw 8kHz mono mu-law.
+
+        Returns None if no welcome_audio_path is configured for the agent.
+        """
+        if audio_path is None:
+            return None
         try:
             with open(audio_path, "rb") as f:
-                return f.read()
+                wav_data = f.read()
         except FileNotFoundError:
             logger.warning("Welcome audio not found at %s", audio_path)
             return None
+
+        ulaw_bytes = strip_wav_header(wav_data)
+        logger.info("Welcome audio: %d bytes raw 8kHz mono mu-law", len(ulaw_bytes))
+        return ulaw_bytes
 
     def cleanup(self):
         """Release resources when the gRPC stream ends. Idempotent."""

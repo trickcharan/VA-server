@@ -1,5 +1,5 @@
-from downstream.proto.voicevirtualagent_pb2 import VoiceVAResponse, Prompt, VoiceVAInputMode
-from downstream.proto.byova_common_pb2 import OutputEvent, TextContent, InputHandlingConfig, DTMFInputConfig, DTMFDigits, InputSpeechTimers
+from app.proto.voicevirtualagent_pb2 import VoiceVAResponse, Prompt, VoiceVAInputMode
+from app.proto.byova_common_pb2 import OutputEvent, TextContent, InputHandlingConfig, DTMFInputConfig, DTMFDigits, InputSpeechTimers
 
 
 class EventUtils:

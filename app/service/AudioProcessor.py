@@ -1,7 +1,7 @@
-from downstream.proto.voicevirtualagent_pb2 import VoiceVAResponse
-from downstream.proto.byova_common_pb2 import OutputEvent
-from downstream.utils.AudioUtils import AudioUtils
-from downstream.utils.EventUtils import EventUtils
+from app.proto.voicevirtualagent_pb2 import VoiceVAResponse
+from app.proto.byova_common_pb2 import OutputEvent
+from app.utils.AudioUtils import AudioUtils
+from app.utils.EventUtils import EventUtils
 
 
 class AudioProcessor:

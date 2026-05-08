@@ -1,0 +1,6 @@
+Acme Travel Agency — Customer Knowledge Base
+
+Popular destinations: New York, London, Tokyo, Paris, Sydney.
+Booking hours: 24/7 online, phone support 8 AM – 10 PM EST.
+Cancellation policy: Free cancellation up to 24 hours before departure.
+Loyalty program: Acme Rewards — 1 point per dollar spent, 10,000 points = free domestic flight.

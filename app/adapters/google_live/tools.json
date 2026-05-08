@@ -1,0 +1,34 @@
+[
+  {
+    "name": "end_call",
+    "description": "End the current call. Use this when the conversation is naturally complete and the customer's request has been fulfilled, or when the customer explicitly asks to end the call.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Brief reason for ending the call, e.g. 'booking_confirmed', 'inquiry_resolved', 'customer_requested_end'"
+        }
+      },
+      "required": ["reason"]
+    }
+  },
+  {
+    "name": "transfer_to_agent",
+    "description": "Transfer the caller to a human agent. Use this when the customer explicitly requests a human agent, or when you cannot resolve the issue.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Brief reason for the transfer, e.g. 'customer_requested', 'unable_to_resolve', 'complex_issue'"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Summary of the conversation so far, including what the customer asked for and any actions taken. This helps the human agent pick up the conversation."
+        }
+      },
+      "required": ["reason", "summary"]
+    }
+  }
+]

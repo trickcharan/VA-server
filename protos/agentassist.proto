@@ -1,0 +1,114 @@
+/*
+ This proto file contains agent assist APIs
+ To analyze the streaming content and assist the agent with the agent assist results
+*/
+syntax = "proto3";
+package com.cisco.wccai.speech.aiinsight.v1;
+
+/*
+ Agent Assist service has both unary and bi-directional grpc calls.
+ Streaming content will be handled via bi-directional grpc call.
+*/
+service AgentAssist {
+  //unary call to analyze content
+  rpc AnalyzeContent (AnalyzeContentRequest) returns (AnalyzeContentResponse) {}
+  //bi-directional grpc call for streaming analyze content
+  rpc streamingAnalyzeContent (stream StreamingAnalyzeContentRequest) returns (stream AnalyzeContentResponse) {}
+}
+
+/*
+ Represents the config message
+*/
+message Config {
+  string orgId=1; //org id
+  string configId=2;//config id
+}
+
+/*
+ Represents the data message
+*/
+message Data {
+  string utteranceId=1; //utteranceId
+  string text=2; //text
+  string conversationId=3; //conversationId
+}
+
+/*
+ Represents the analyze content request message
+*/
+message AnalyzeContentRequest {
+  string orgId=1; //orgId
+  string configId=2; //configId
+  string utteranceId=3; //utteranceId
+  string text=4; //text
+  string conversationId=5; //conversationId
+}
+
+/*
+ Represents the Streaminganalyzecontent request message
+*/
+message StreamingAnalyzeContentRequest {
+  oneof content {
+    Config config=1; //config information
+    Data data=2; //data
+  }
+}
+
+/*
+ Represents the Agent answer result
+*/
+message AgentAnswerResult {
+  oneof answer_oneof {
+    Status error = 1 ; // error
+    AgentAnswer agentAnswerResult = 2; //agent answer result
+  }
+}
+
+/*
+ Represents the Agent answer message
+*/
+message AgentAnswer {
+  repeated Answer answers = 1; //answers
+  repeated string tags = 2; //tags
+}
+
+/*
+ Represents the Answer message
+*/
+message Answer {
+  string title = 1; //title
+  string uri = 2; //uri
+  repeated string snippets = 3; //list of snippets
+  string description = 4; //description
+  float confidence = 5; //confidence value
+  string source = 6; //source information
+  map <string, string> metadata = 7; //metadata values
+  string answer_record = 8; //answer record
+  repeated range highlight = 9; //list of highlights with start and end values
+}
+
+/*
+ Represents the range message specifying start and end
+*/
+message range {
+  int32 start = 1; //start
+  int32 end = 2; //end
+}
+
+/*
+ Represents the Analyze content response message
+*/
+message AnalyzeContentResponse {
+  string utteranceId=1; //utterance id
+  int64 startTime=2; //start time
+  int64 endTime=3; //end time
+  AgentAnswerResult result=4; //agent answer result
+}
+
+/*
+ Represents the status message
+*/
+message Status {
+  int32 code = 1; //code
+  string message = 2; //message
+}

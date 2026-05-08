@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY downstream/ ./downstream/
+COPY app/ ./app/
 
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
@@ -18,4 +18,4 @@ EXPOSE 8086
 
 HEALTHCHECK NONE
 
-ENTRYPOINT ["python", "-m", "downstream.server.AIAgentServer"]
+ENTRYPOINT ["python", "-m", "app.server.AIAgentServer"]
