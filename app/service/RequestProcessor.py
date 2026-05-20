@@ -72,6 +72,7 @@ class RequestProcessor:
                     barge_in_enabled=self.is_barge_in_enabled,
                     system_instruction=config.system_instruction,
                     customer_tools=config.tools,
+                    api_base_url=config.api_base_url,
                 )
                 welcome_audio = self._load_welcome_audio(config.welcome_audio_path)
                 yield from self.adapter.on_session_start(welcome_audio=welcome_audio)

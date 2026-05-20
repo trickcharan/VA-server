@@ -1,0 +1,87 @@
+[
+  {
+    "name": "list_items",
+    "description": "List all available items in the inventory. Use this when the customer asks what items are available, wants to browse products, or asks about the menu/catalog.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "get_item",
+    "description": "Get details of a specific item by its ID. Use this when the customer asks about a particular item or wants more information about a product.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "description": "The unique ID of the item to retrieve"
+        }
+      },
+      "required": ["item_id"]
+    }
+  },
+  {
+    "name": "create_item",
+    "description": "Create a new item in the inventory. Use this when the customer wants to place an order or add a new product.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the item"
+        },
+        "price": {
+          "type": "number",
+          "description": "Price of the item"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the item, e.g. 'electronics', 'kitchen', 'food'"
+        }
+      },
+      "required": ["name", "price"]
+    }
+  },
+  {
+    "name": "update_item",
+    "description": "Update an existing item's details. Use this when the customer wants to change an order or modify product information.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "description": "The unique ID of the item to update"
+        },
+        "name": {
+          "type": "string",
+          "description": "Updated name of the item"
+        },
+        "price": {
+          "type": "number",
+          "description": "Updated price of the item"
+        },
+        "category": {
+          "type": "string",
+          "description": "Updated category of the item"
+        }
+      },
+      "required": ["item_id"]
+    }
+  },
+  {
+    "name": "delete_item",
+    "description": "Delete an item from the inventory. Use this when the customer wants to cancel an order or remove a product.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "description": "The unique ID of the item to delete"
+        }
+      },
+      "required": ["item_id"]
+    }
+  }
+]

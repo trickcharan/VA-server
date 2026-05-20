@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8086:8086"   # gRPC server
+      - "8080:8080"   # Admin UI
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - DB_URL=postgresql://vauser:vapass@postgres:5432/vadb
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - ADMIN_PORT=8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=vauser
+      - POSTGRES_PASSWORD=vapass
+      - POSTGRES_DB=vadb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vauser -d vadb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

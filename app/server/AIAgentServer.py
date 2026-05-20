@@ -1,6 +1,7 @@
 import grpc
 import logging
 import os
+import threading
 from concurrent import futures
 
 from app.proto import byova_common_pb2
@@ -10,6 +11,7 @@ from app.interceptor.AuthInterceptor import AuthInterceptor
 from app.service.RequestProcessor import RequestProcessor
 
 PORT = 8086
+ADMIN_PORT = int(os.environ.get("ADMIN_PORT", 8080))
 
 
 class AIAgent(voicevirtualagent_pb2_grpc.VoiceVirtualAgentServicer):
@@ -72,7 +74,27 @@ class AIAgent(voicevirtualagent_pb2_grpc.VoiceVirtualAgentServicer):
                 print(f"[{conversation_id}] Stream ended (deleted={can_delete})")
 
 
+def _start_admin_ui():
+    """Start the FastAPI admin UI in a background thread."""
+    try:
+        import uvicorn
+        from app.admin.app import app as admin_app
+        logger = logging.getLogger("admin-server")
+        logger.info("Starting Admin UI on port %d...", ADMIN_PORT)
+        uvicorn.run(admin_app, host="0.0.0.0", port=ADMIN_PORT, log_level="warning")
+    except ImportError:
+        logging.getLogger("admin-server").warning(
+            "uvicorn not installed — Admin UI disabled. pip install uvicorn"
+        )
+    except Exception as e:
+        logging.getLogger("admin-server").error("Admin UI failed to start: %s", e)
+
+
 def serve():
+    # Start Admin UI in background thread
+    admin_thread = threading.Thread(target=_start_admin_ui, daemon=True, name="admin-ui")
+    admin_thread.start()
+
     thread_count = int(os.environ.get('worker_thread', 10))
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=thread_count),
@@ -80,7 +102,7 @@ def serve():
     )
     voicevirtualagent_pb2_grpc.add_VoiceVirtualAgentServicer_to_server(AIAgent(), server)
     server.add_insecure_port(f'[::]:{PORT}')
-    print('starting server')
+    print(f'Starting gRPC server on port {PORT}, Admin UI on port {ADMIN_PORT}')
     server.start()
     server.wait_for_termination()
 

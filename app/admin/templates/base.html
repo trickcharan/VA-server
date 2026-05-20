@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}VA Admin{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Navbar -->
+    {% if user %}
+    <nav class="bg-white border-b border-gray-200 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-14 items-center">
+                <div class="flex items-center space-x-4">
+                    <a href="/admin/" class="text-lg font-bold text-indigo-600">VA Admin</a>
+                    {% if user.role.value == 'super_admin' %}
+                    <span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Super Admin</span>
+                    {% else %}
+                    <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{{ user.org.name if user.org else 'No Org' }}</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center space-x-4 text-sm text-gray-600">
+                    <span>{{ user.username }}</span>
+                    <a href="/admin/logout" class="text-red-500 hover:text-red-700">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <!-- Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

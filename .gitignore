@@ -6,3 +6,4 @@ __pycache__/
 downstream/config/audio/debug/
 app/config/audio/debug/
 rms_simulator/
+*.db

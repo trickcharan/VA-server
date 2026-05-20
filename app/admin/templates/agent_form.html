@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if agent else 'New' }} Agent — VA Admin{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">{{ 'Edit Agent' if agent else 'New Agent' }}</h1>
+        <a href="/admin/" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back</a>
+    </div>
+
+    {% if error %}
+    <div class="bg-red-50 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="POST"
+          action="{{ '/admin/agents/' ~ agent.id ~ '/edit' if agent else '/admin/agents/new' }}"
+          class="bg-white rounded-xl shadow p-6 space-y-5">
+
+        <!-- Name -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Agent Name</label>
+            <input type="text" name="name" required
+                   value="{{ agent.name if agent else '' }}"
+                   placeholder="e.g. Travel Booking Agent"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+        </div>
+
+        <!-- Provider -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+            <select name="provider"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                <option value="google_live" {{ 'selected' if not agent or agent.provider == 'google_live' else '' }}>Google Live</option>
+            </select>
+        </div>
+
+        <!-- Agent Persona & Business Rules -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Agent Persona & Business Rules</label>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2 text-xs text-blue-800">
+                <p class="font-semibold mb-1">What to include here:</p>
+                <ul class="list-disc list-inside space-y-0.5">
+                    <li><strong>Role</strong> — Who is the agent? (e.g. "You are a travel booking specialist at Acme Travel")</li>
+                    <li><strong>Business rules</strong> — What should the agent do? (e.g. "Before booking, confirm date, time, and destination")</li>
+                    <li><strong>Tone & style</strong> — How should it speak? (e.g. "Speak casually" or "Use formal language")</li>
+                    <li><strong>Boundaries</strong> — What should it NOT do? (e.g. "Do not discuss competitor products")</li>
+                </ul>
+                <p class="mt-2 text-blue-600">Note: Platform-level rules (tool usage, escalation policy, greeting, privacy) are automatically applied. You don't need to include them.</p>
+            </div>
+            <textarea name="system_instruction" rows="12"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-mono text-sm"
+                      placeholder="Role:&#10;You are a travel booking specialist at Acme Travel.&#10;&#10;Business Rules:&#10;- Before booking, confirm date, time, and destination&#10;- Offer alternative routes if direct is unavailable&#10;&#10;Tone:&#10;Professional but friendly. Keep responses concise.">{{ agent.system_instruction if agent else '' }}</textarea>
+        </div>
+
+        <!-- Context -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Context / Knowledge Base</label>
+            <p class="text-xs text-gray-400 mb-1">Business-specific data, FAQs, product catalog, etc.</p>
+            <textarea name="context" rows="8"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-mono text-sm"
+                      placeholder="Company Name — Knowledge Base&#10;&#10;Products: ...">{{ agent.context if agent else '' }}</textarea>
+        </div>
+
+        <!-- REST API Configuration -->
+        <div class="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-4">
+            <div>
+                <h3 class="text-sm font-semibold text-gray-800 mb-1">REST API Integration</h3>
+                <p class="text-xs text-gray-500">Connect your agent to a REST API. The AI will use the <code class="bg-gray-200 px-1 rounded">execute_api</code> tool to call these endpoints based on the documentation you provide.</p>
+            </div>
+
+            <!-- API Base URL -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">API Base URL</label>
+                <input type="text" name="api_base_url"
+                       value="{{ agent.api_base_url if agent and agent.api_base_url else '' }}"
+                       placeholder="http://localhost:8081"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-mono text-sm">
+                <p class="text-xs text-gray-400 mt-1">The base URL of your REST API. The AI will append paths from the documentation below.</p>
+            </div>
+
+            <!-- API Documentation -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">API Documentation</label>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-2 text-xs text-amber-800">
+                    <p class="font-semibold mb-1">How to write API docs for the AI:</p>
+                    <ul class="list-disc list-inside space-y-0.5">
+                        <li>List each endpoint with its <strong>method</strong>, <strong>path</strong>, and <strong>description</strong></li>
+                        <li>For POST/PUT, describe the <strong>request body fields</strong></li>
+                        <li>Describe what each endpoint <strong>returns</strong></li>
+                        <li>The AI will use the <code class="bg-amber-200 px-1 rounded">execute_api</code> tool to call these — no extra tools needed</li>
+                    </ul>
+                </div>
+                <textarea name="api_docs" rows="12"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-mono text-sm"
+                          placeholder="GET /items&#10;  List all items. Returns {items: [...], total: N}&#10;&#10;GET /items/{id}&#10;  Get item by ID. Returns {id, name, price, category}&#10;&#10;POST /items&#10;  Create item. Body: {name: string, price: number, category: string}&#10;  Returns the created item with ID.&#10;&#10;PUT /items/{id}&#10;  Update item. Body: {name?, price?, category?}&#10;&#10;DELETE /items/{id}&#10;  Delete item.">{{ agent.api_docs if agent and agent.api_docs else '' }}</textarea>
+            </div>
+        </div>
+
+        <!-- Tools JSON (advanced) -->
+        <details class="group">
+            <summary class="text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700">Advanced: Custom Tools (JSON)</summary>
+            <div class="mt-2">
+                <p class="text-xs text-gray-400 mb-1">Additional custom tool definitions beyond execute_api. Base tools (end_call, transfer_to_agent, execute_api) are always included.</p>
+                <textarea name="tools_json" rows="8"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-mono text-sm"
+                          placeholder="[]">{{ agent.tools | tojson(indent=2) if agent and agent.tools else '[]' }}</textarea>
+            </div>
+        </details>
+
+        {% if agent %}
+        <!-- Active toggle -->
+        <div class="flex items-center space-x-2">
+            <input type="checkbox" name="is_active" id="is_active" value="true"
+                   {{ 'checked' if agent.is_active else '' }}
+                   class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+            <label for="is_active" class="text-sm text-gray-700">Active</label>
+        </div>
+        {% endif %}
+
+        <!-- Submit -->
+        <div class="flex justify-end space-x-3 pt-4 border-t">
+            <a href="/admin/" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg">Cancel</a>
+            <button type="submit"
+                    class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium">
+                {{ 'Update Agent' if agent else 'Create Agent' }}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

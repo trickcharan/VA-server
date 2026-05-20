@@ -21,6 +21,8 @@ import os
 import queue
 import threading
 
+import aiohttp
+
 from app.adapters.base import STSAdapter
 from app.adapters.google_live.session import GoogleLiveSession
 from app.audio.transcoder import ulaw_to_pcm16, pcm16_to_ulaw
@@ -56,12 +58,14 @@ class GoogleLiveAdapter(STSAdapter):
     def __init__(self, conversation_id: str, barge_in_enabled: bool = True,
                  system_instruction: str | None = None,
                  greeting_trigger: str | None = None,
-                 customer_tools: list[dict] | None = None):
+                 customer_tools: list[dict] | None = None,
+                 api_base_url: str | None = None):
         self.conversation_id = conversation_id
         self.barge_in_enabled = barge_in_enabled
         self._system_instruction = system_instruction
         self._greeting_trigger = greeting_trigger if greeting_trigger is not None else self.DEFAULT_GREETING_TRIGGER
         self._customer_tools = customer_tools or []
+        self._api_base_url = api_base_url
 
         # Asyncio event loop in a background thread
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -379,11 +383,59 @@ class GoogleLiveAdapter(STSAdapter):
             # Close Google WS — this breaks the receive loop cleanly
             await self._session.close()
 
+        elif name == "execute_api":
+            result = await self._execute_api(args)
+            logger.info("[%s] execute_api result: %s", self.conversation_id, result)
+            await self._session.send_tool_response(function_call_id, name, result)
+
         else:
             logger.warning("[%s] Unknown tool call: %s", self.conversation_id, name)
             await self._session.send_tool_response(
                 function_call_id, name, {"status": "error", "message": f"Unknown tool: {name}"}
             )
+
+    async def _execute_api(self, args: dict) -> dict:
+        """Generic HTTP executor — calls the customer's REST API."""
+        if not self._api_base_url:
+            return {"status": "error", "message": "No API base URL configured for this agent."}
+
+        import json as _json
+        method = args.get("method", "GET").upper()
+        path = args.get("path", "/")
+        raw_body = args.get("body")
+        body = None
+        if raw_body:
+            try:
+                body = _json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+            except (_json.JSONDecodeError, TypeError):
+                body = raw_body
+        query = args.get("query", "")
+
+        url = f"{self._api_base_url.rstrip('/')}{path}"
+        if query:
+            url = f"{url}?{query}"
+
+        logger.info("[%s] execute_api: %s %s (body=%s)", self.conversation_id, method, url, body)
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                kwargs = {"timeout": aiohttp.ClientTimeout(total=10)}
+                if body and method in ("POST", "PUT", "PATCH"):
+                    kwargs["json"] = body
+                async with session.request(method, url, **kwargs) as resp:
+                    status = resp.status
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = await resp.text()
+                    if status >= 400:
+                        return {"status": "error", "http_status": status, "message": str(data)}
+                    return {"status": "success", "http_status": status, "data": data}
+        except asyncio.TimeoutError:
+            return {"status": "error", "message": "API request timed out"}
+        except Exception as e:
+            logger.error("[%s] execute_api failed: %s", self.conversation_id, e)
+            return {"status": "error", "message": f"API call failed: {e}"}
 
     async def _on_google_audio(self, audio_bytes: bytes):
         """Google sent model audio — transcode and enqueue as CHUNK for gRPC."""

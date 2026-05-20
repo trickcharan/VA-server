@@ -30,5 +30,31 @@
       },
       "required": ["reason", "summary"]
     }
+  },
+  {
+    "name": "execute_api",
+    "description": "Make an HTTP request to the configured REST API. Use this tool to fetch data, create records, update records, or delete records based on the API documentation provided in your instructions. Construct the correct method, path, query parameters, and request body based on the API docs.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "HTTP method: GET, POST, PUT, DELETE, PATCH"
+        },
+        "path": {
+          "type": "string",
+          "description": "API path including path parameters, e.g. /items or /items/abc123"
+        },
+        "body": {
+          "type": "string",
+          "description": "JSON-encoded request body for POST/PUT/PATCH requests. Example: '{\"name\": \"Laptop\", \"price\": 999}'. Omit for GET/DELETE."
+        },
+        "query": {
+          "type": "string",
+          "description": "Query string parameters, e.g. 'limit=10&category=food'. Omit if not needed."
+        }
+      },
+      "required": ["method", "path"]
+    }
   }
 ]

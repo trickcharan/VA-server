@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Agents — {{ org.name }} — VA Admin{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-800">{{ org.name }}</h1>
+        <p class="text-sm text-gray-500 mt-1">Manage your virtual agents</p>
+    </div>
+    <a href="/admin/agents/new"
+       class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition text-sm font-medium">
+        + New Agent
+    </a>
+</div>
+
+<div class="grid gap-4">
+    {% for agent in agents %}
+    <div class="bg-white rounded-xl shadow p-6 hover:shadow-md transition">
+        <div class="flex justify-between items-start">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800">{{ agent.name }}</h3>
+                <div class="flex items-center space-x-3 mt-2 text-sm text-gray-500">
+                    <span class="bg-gray-100 px-2 py-0.5 rounded">{{ agent.provider }}</span>
+                    <span>ID: {{ agent.id }}</span>
+                    {% if agent.is_active %}
+                    <span class="text-green-600 font-medium">Active</span>
+                    {% else %}
+                    <span class="text-red-600 font-medium">Inactive</span>
+                    {% endif %}
+                </div>
+                <p class="text-sm text-gray-400 mt-2">
+                    Instruction: {{ agent.system_instruction[:100] }}{{ '...' if agent.system_instruction|length > 100 else '' }}
+                </p>
+                <p class="text-sm text-gray-400">
+                    Tools: {{ agent.tools|length if agent.tools else 0 }} defined
+                </p>
+            </div>
+            <div class="flex items-center space-x-2">
+                <a href="/admin/agents/{{ agent.id }}/edit"
+                   class="text-indigo-600 hover:text-indigo-800 text-sm font-medium px-3 py-1 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition">
+                    Edit
+                </a>
+                <form method="POST" action="/admin/agents/{{ agent.id }}/delete"
+                      onsubmit="return confirm('Delete this agent?')">
+                    <button type="submit"
+                            class="text-red-500 hover:text-red-700 text-sm font-medium px-3 py-1 border border-red-200 rounded-lg hover:bg-red-50 transition">
+                        Delete
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% if not agents %}
+    <div class="bg-white rounded-xl shadow p-12 text-center text-gray-400">
+        <p class="text-lg">No agents yet</p>
+        <p class="text-sm mt-1">Create your first virtual agent to get started</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
